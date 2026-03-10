@@ -1,18 +1,24 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { userService } from '../services/userService';
+import { User } from '../types';
 
-function LoginPage({ onLogin }) {
+interface LoginPageProps {
+    onLogin: (user: User) => void;
+}
+
+function LoginPage({ onLogin }: LoginPageProps) {
     const [formData, setFormData] = useState({ username: '', password: '' });
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
         setError(null);
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.username || !formData.password) {
             setError('Por favor complete todos los campos');
@@ -21,12 +27,11 @@ function LoginPage({ onLogin }) {
 
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:3000/users?username=${formData.username}&password=${formData.password}`);
-            const data = await response.json();
+            const user = await userService.login(formData.username, formData.password);
 
-            if (data.length > 0) {
-                onLogin(data[0]);
-                navigate(data[0].role === 'admin' ? '/admin' : '/client');
+            if (user) {
+                onLogin(user);
+                navigate(user.role === 'admin' ? '/admin' : '/client');
             } else {
                 setError('Credenciales inválidas. Intente nuevamente.');
             }

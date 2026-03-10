@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
+import { productService } from '../services/productService';
+import { userService } from '../services/userService';
+import { orderService } from '../services/orderService';
+import { User, Product, Order } from '../types';
 
 const TABS = ['Productos', 'Usuarios', 'Compras'];
-const EMPTY_FORM = { name: '', price: '', stock: '', category: 'Suplementos', description: '', image: '' };
+const EMPTY_FORM = { name: '', price: 0, stock: 0, category: 'Suplementos', description: '', image: '' };
 const CATEGORIES = ['Suplementos', 'Pastillas', 'Accesorios', 'Ropa'];
 
-// Configuración base del tema GainForce para SweetAlert2
 const SwalGF = Swal.mixin({
     background: '#27272a',
     color: '#f8fafc',
@@ -15,46 +18,48 @@ const SwalGF = Swal.mixin({
     iconColor: '#dc2626',
 });
 
-function AdminDashboard({ user }) {
+interface AdminDashboardProps {
+    user: User;
+}
+
+function AdminDashboard({ user }: AdminDashboardProps) {
     const [activeTab, setActiveTab] = useState('Productos');
 
-    const [products, setProducts] = useState([]);
+    const [products, setProducts] = useState<Product[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState(EMPTY_FORM);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<Partial<Product>>(EMPTY_FORM);
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editImageMode, setEditImageMode] = useState('url'); // 'url' | 'file'
+    const [editImageMode, setEditImageMode] = useState<'url' | 'file'>('url');
     const [showNewForm, setShowNewForm] = useState(false);
-    const [newForm, setNewForm] = useState(EMPTY_FORM);
-    const [newImageMode, setNewImageMode] = useState('url'); // 'url' | 'file'
+    const [newForm, setNewForm] = useState<Partial<Product>>(EMPTY_FORM);
+    const [newImageMode, setNewImageMode] = useState<'url' | 'file'>('url');
 
-    const [users, setUsers] = useState([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(true);
 
-    const [orders, setOrders] = useState([]);
+    const [orders, setOrders] = useState<Order[]>([]);
     const [loadingOrders, setLoadingOrders] = useState(true);
 
     useEffect(() => { fetchProducts(); fetchUsers(); fetchOrders(); }, []);
 
-    // ─── PRODUCTOS ────────────────────────────────────────────
     const fetchProducts = async () => {
         setLoadingProducts(true);
         try {
-            const res = await fetch('http://localhost:3000/products');
-            setProducts(await res.json());
+            const data = await productService.getAll();
+            setProducts(data);
         } catch {
             SwalGF.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar los productos.' });
         } finally { setLoadingProducts(false); }
     };
 
-    // Convierte, redimensiona y comprime un archivo a base64
-    const fileToBase64 = (file) => new Promise((resolve, reject) => {
+    const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800; // Tamaño máximo
+                const MAX_WIDTH = 800;
                 const MAX_HEIGHT = 800;
                 let width = img.width;
                 let height = img.height;
@@ -74,32 +79,29 @@ function AdminDashboard({ user }) {
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // Exportar como JPEG con compresión del 70%
+                ctx?.drawImage(img, 0, 0, width, height);
                 resolve(canvas.toDataURL('image/jpeg', 0.7));
             };
             img.onerror = reject;
-            img.src = e.target.result;
+            img.src = e.target?.result as string;
         };
         reader.onerror = reject;
         reader.readAsDataURL(file);
     });
 
-    const handleEdit = (p) => {
+    const handleEdit = (p: Product) => {
         setEditingId(p.id);
         setEditForm({ ...p });
         setShowEditModal(true);
     };
 
     const handleUpdate = async () => {
-        if (!editForm.name || editForm.price === '' || editForm.stock === '') {
+        if (!editForm.name || !editForm.price || !editForm.stock || !editingId) {
             SwalGF.fire({ icon: 'warning', title: 'Campos incompletos', text: 'Nombre, precio y stock son obligatorios.' });
             return;
         }
 
         try {
-            // Preparamos los datos asegurando tipos correctos
             const payload = {
                 name: editForm.name,
                 category: editForm.category,
@@ -109,22 +111,12 @@ function AdminDashboard({ user }) {
                 image: editForm.image
             };
 
+            const data = await productService.update(editingId, payload);
 
-            const res = await fetch(`http://localhost:3000/products/${editingId}`, {
-                method: 'PATCH', // Usamos PATCH para actualizaciones parciales
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                const updatedProduct = await res.json();
-
-                // Actualizamos el estado local sin necesidad de re-fetch total
-                setProducts(prev => prev.map(p => p.id === editingId ? updatedProduct : p));
-
+            if (data) {
+                setProducts(prev => prev.map(p => p.id === editingId ? data : p));
                 setEditingId(null);
                 setShowEditModal(false);
-
                 SwalGF.fire({
                     icon: 'success',
                     title: '¡Actualizado!',
@@ -132,26 +124,14 @@ function AdminDashboard({ user }) {
                     timer: 2000,
                     showConfirmButton: false
                 });
-            } else {
-                const errorTxt = await res.text();
-                console.error('Error del servidor:', res.status, errorTxt);
-                SwalGF.fire({
-                    icon: 'error',
-                    title: `Error ${res.status}`,
-                    text: 'El servidor rechazó la actualización.'
-                });
             }
         } catch (err) {
-            console.error('Error de red en handleUpdate:', err);
-            SwalGF.fire({
-                icon: 'error',
-                title: 'Error de conexión',
-                text: 'No se pudo contactar con el servidor. Revisa tu conexión.'
-            });
+            console.error('Error en handleUpdate:', err);
+            SwalGF.fire({ icon: 'error', title: 'Error', text: 'No se pudo contactar con el servidor.' });
         }
     };
 
-    const handleDelete = async (id, name) => {
+    const handleDelete = async (id: string, name: string) => {
         const result = await SwalGF.fire({
             icon: 'warning',
             title: '¿Eliminar producto?',
@@ -162,8 +142,8 @@ function AdminDashboard({ user }) {
         });
         if (!result.isConfirmed) return;
         try {
-            const res = await fetch(`http://localhost:3000/products/${id}`, { method: 'DELETE' });
-            if (res.ok) {
+            const success = await productService.delete(id);
+            if (success) {
                 setProducts(products.filter(p => p.id !== id));
                 SwalGF.fire({ icon: 'success', title: 'Eliminado', text: 'Producto eliminado correctamente.', timer: 2000, showConfirmButton: false });
             }
@@ -172,20 +152,15 @@ function AdminDashboard({ user }) {
         }
     };
 
-    const handleCreate = async (e) => {
+    const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newForm.name || !newForm.price || !newForm.stock) {
             SwalGF.fire({ icon: 'warning', title: 'Campos incompletos', text: 'Nombre, precio y stock son obligatorios.' });
             return;
         }
         try {
-            const res = await fetch('http://localhost:3000/products', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...newForm, id: Date.now().toString(), price: Number(newForm.price), stock: Number(newForm.stock) })
-            });
-            if (res.ok) {
-                const created = await res.json();
+            const created = await productService.create({ ...newForm, id: Date.now().toString(), price: Number(newForm.price), stock: Number(newForm.stock) });
+            if (created) {
                 setProducts([...products, created]);
                 setNewForm(EMPTY_FORM);
                 setShowNewForm(false);
@@ -196,18 +171,17 @@ function AdminDashboard({ user }) {
         }
     };
 
-    // ─── USUARIOS ─────────────────────────────────────────────
     const fetchUsers = async () => {
         setLoadingUsers(true);
         try {
-            const res = await fetch('http://localhost:3000/users');
-            setUsers(await res.json());
+            const data = await userService.getAll();
+            setUsers(data);
         } catch {
             SwalGF.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar los usuarios.' });
         } finally { setLoadingUsers(false); }
     };
 
-    const handleDeleteUser = async (id, fullName) => {
+    const handleDeleteUser = async (id: string, fullName: string) => {
         const result = await SwalGF.fire({
             icon: 'warning',
             title: '¿Eliminar usuario?',
@@ -218,8 +192,8 @@ function AdminDashboard({ user }) {
         });
         if (!result.isConfirmed) return;
         try {
-            const res = await fetch(`http://localhost:3000/users/${id}`, { method: 'DELETE' });
-            if (res.ok) {
+            const success = await userService.delete(id);
+            if (success) {
                 setUsers(users.filter(u => u.id !== id));
                 SwalGF.fire({ icon: 'success', title: 'Usuario eliminado', timer: 2000, showConfirmButton: false });
             }
@@ -228,18 +202,17 @@ function AdminDashboard({ user }) {
         }
     };
 
-    // ─── ÓRDENES ──────────────────────────────────────────────
     const fetchOrders = async () => {
         setLoadingOrders(true);
         try {
-            const res = await fetch('http://localhost:3000/orders');
-            setOrders(await res.json());
+            const data = await orderService.getAll();
+            setOrders(data);
         } catch {
             SwalGF.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar las compras.' });
         } finally { setLoadingOrders(false); }
     };
 
-    const inputStyle = {
+    const inputStyle: React.CSSProperties = {
         width: '100%', padding: '0.4rem 0.5rem', fontSize: '0.85rem',
         backgroundColor: 'var(--surface-light)', border: '1px solid var(--border)',
         borderRadius: '0.25rem', color: 'var(--text-main)'
@@ -247,8 +220,6 @@ function AdminDashboard({ user }) {
 
     return (
         <div className="container animate-fade-in" style={{ paddingBottom: '4rem' }}>
-
-            {/* ═══ MODAL DE EDICIÓN ═══ */}
             {showEditModal && (
                 <div
                     onClick={() => setShowEditModal(false)}
@@ -288,15 +259,14 @@ function AdminDashboard({ user }) {
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>Precio en ₡ *</label>
-                                <input style={inputStyle} type="number" value={editForm.price} onChange={e => setEditForm({ ...editForm, price: e.target.value })} />
+                                <input style={inputStyle} type="number" value={editForm.price} onChange={e => setEditForm({ ...editForm, price: Number(e.target.value) })} />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>Stock *</label>
-                                <input style={inputStyle} type="number" value={editForm.stock} onChange={e => setEditForm({ ...editForm, stock: e.target.value })} />
+                                <input style={inputStyle} type="number" value={editForm.stock} onChange={e => setEditForm({ ...editForm, stock: Number(e.target.value) })} />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
                                 <label style={{ fontSize: '0.8rem', marginBottom: '0.5rem', display: 'block' }}>Imagen</label>
-                                {/* Toggle URL / Archivo */}
                                 <div style={{ display: 'flex', gap: 0, marginBottom: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.25rem', overflow: 'hidden', width: 'fit-content' }}>
                                     <button type="button"
                                         onClick={() => setEditImageMode('url')}
@@ -311,7 +281,7 @@ function AdminDashboard({ user }) {
                                     ? <input style={inputStyle} value={editForm.image} onChange={e => setEditForm({ ...editForm, image: e.target.value })} placeholder="https://... o /images/producto.jpg" />
                                     : <input type="file" accept="image/*" style={{ ...inputStyle, padding: '0.3rem' }}
                                         onChange={async e => {
-                                            if (e.target.files[0]) {
+                                            if (e.target.files && e.target.files[0]) {
                                                 const b64 = await fileToBase64(e.target.files[0]);
                                                 setEditForm({ ...editForm, image: b64 });
                                             }
@@ -339,17 +309,12 @@ function AdminDashboard({ user }) {
                     <p style={{ margin: 0, fontSize: '0.9rem' }}>Bienvenido, {user.fullName}</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <Link
-                        to="/"
-                        className="btn btn-outline"
-                        style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                    >
+                    <Link to="/" className="btn btn-outline" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         🛍️ Ver Tienda
                     </Link>
                 </div>
             </div>
 
-            {/* Pestañas */}
             <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' }}>
                 {TABS.map(tab => (
                     <button
@@ -368,16 +333,11 @@ function AdminDashboard({ user }) {
                 ))}
             </div>
 
-            {/* ══════════════ TAB: PRODUCTOS ══════════════ */}
             {activeTab === 'Productos' && (
                 <div>
                     <div className="flex justify-between items-center mb-4">
                         <h3 style={{ margin: 0 }}>Inventario ({products.length} productos)</h3>
-                        <button
-                            onClick={() => { setShowNewForm(!showNewForm); }}
-                            className="btn btn-primary"
-                            style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}
-                        >
+                        <button onClick={() => setShowNewForm(!showNewForm)} className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}>
                             {showNewForm ? 'Cancelar' : '+ Nuevo Producto'}
                         </button>
                     </div>
@@ -399,35 +359,22 @@ function AdminDashboard({ user }) {
                                     </div>
                                     <div className="form-group" style={{ marginBottom: 0 }}>
                                         <label style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>Precio en ₡ *</label>
-                                        <input style={inputStyle} type="number" value={newForm.price} onChange={e => setNewForm({ ...newForm, price: e.target.value })} placeholder="Ej. 15000" />
+                                        <input style={inputStyle} type="number" value={newForm.price} onChange={e => setNewForm({ ...newForm, price: Number(e.target.value) })} placeholder="Ej. 15000" />
                                     </div>
                                     <div className="form-group" style={{ marginBottom: 0 }}>
                                         <label style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>Stock *</label>
-                                        <input style={inputStyle} type="number" value={newForm.stock} onChange={e => setNewForm({ ...newForm, stock: e.target.value })} placeholder="Ej. 50" />
+                                        <input style={inputStyle} type="number" value={newForm.stock} onChange={e => setNewForm({ ...newForm, stock: Number(e.target.value) })} placeholder="Ej. 50" />
                                     </div>
                                     <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
                                         <label style={{ fontSize: '0.8rem', marginBottom: '0.5rem', display: 'block' }}>Imagen</label>
                                         <div style={{ display: 'flex', gap: 0, marginBottom: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.25rem', overflow: 'hidden', width: 'fit-content' }}>
-                                            <button type="button"
-                                                onClick={() => setNewImageMode('url')}
-                                                style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', backgroundColor: newImageMode === 'url' ? 'var(--primary)' : 'var(--surface-light)', color: newImageMode === 'url' ? '#fff' : 'var(--text-muted)' }}
-                                            >URL</button>
-                                            <button type="button"
-                                                onClick={() => setNewImageMode('file')}
-                                                style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', backgroundColor: newImageMode === 'file' ? 'var(--primary)' : 'var(--surface-light)', color: newImageMode === 'file' ? '#fff' : 'var(--text-muted)' }}
-                                            >📂 Archivo</button>
+                                            <button type="button" onClick={() => setNewImageMode('url')} style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', backgroundColor: newImageMode === 'url' ? 'var(--primary)' : 'var(--surface-light)', color: newImageMode === 'url' ? '#fff' : 'var(--text-muted)' }}>URL</button>
+                                            <button type="button" onClick={() => setNewImageMode('file')} style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', backgroundColor: newImageMode === 'file' ? 'var(--primary)' : 'var(--surface-light)', color: newImageMode === 'file' ? '#fff' : 'var(--text-muted)' }}>📂 Archivo</button>
                                         </div>
                                         {newImageMode === 'url'
                                             ? <input style={inputStyle} value={newForm.image} onChange={e => setNewForm({ ...newForm, image: e.target.value })} placeholder="https://... o /images/producto.jpg" />
                                             : <>
-                                                <input type="file" accept="image/*" style={{ ...inputStyle, padding: '0.3rem' }}
-                                                    onChange={async e => {
-                                                        if (e.target.files[0]) {
-                                                            const b64 = await fileToBase64(e.target.files[0]);
-                                                            setNewForm({ ...newForm, image: b64 });
-                                                        }
-                                                    }}
-                                                />
+                                                <input type="file" accept="image/*" style={{ ...inputStyle, padding: '0.3rem' }} onChange={async e => { if (e.target.files && e.target.files[0]) { const b64 = await fileToBase64(e.target.files[0]); setNewForm({ ...newForm, image: b64 }); } }} />
                                                 {newForm.image && <img src={newForm.image} alt="preview" style={{ marginTop: '0.5rem', height: '80px', objectFit: 'cover', borderRadius: '0.25rem' }} />}
                                             </>
                                         }
@@ -461,18 +408,9 @@ function AdminDashboard({ user }) {
                                 <tbody>
                                     {products.map(p => (
                                         <tr key={p.id}>
-                                            <td>
-                                                {p.image
-                                                    ? <img src={p.image} alt={p.name} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '0.25rem' }} />
-                                                    : <div style={{ width: '50px', height: '50px', backgroundColor: 'var(--surface-light)', borderRadius: '0.25rem' }} />
-                                                }
-                                            </td>
-                                            <td>
-                                                <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{p.name}</span>
-                                            </td>
-                                            <td>
-                                                <span className="badge badge-category" style={{ fontSize: '0.65rem' }}>{p.category}</span>
-                                            </td>
+                                            <td> {p.image ? <img src={p.image} alt={p.name} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '0.25rem' }} /> : <div style={{ width: '50px', height: '50px', backgroundColor: 'var(--surface-light)', borderRadius: '0.25rem' }} />} </td>
+                                            <td> <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{p.name}</span> </td>
+                                            <td> <span className="badge badge-category" style={{ fontSize: '0.65rem' }}>{p.category}</span> </td>
                                             <td>₡{Number(p.price).toLocaleString('es-CR')}</td>
                                             <td>{p.stock}</td>
                                             <td>
@@ -490,7 +428,6 @@ function AdminDashboard({ user }) {
                 </div>
             )}
 
-            {/* ══════════════ TAB: USUARIOS ══════════════ */}
             {activeTab === 'Usuarios' && (
                 <div>
                     <h3 style={{ marginBottom: '1rem' }}>Usuarios Registrados ({users.length})</h3>
@@ -513,13 +450,7 @@ function AdminDashboard({ user }) {
                                             <td style={{ fontWeight: '500' }}>{u.fullName}</td>
                                             <td>@{u.username}</td>
                                             <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{u.email}</td>
-                                            <td>
-                                                {u.role !== 'admin' && (
-                                                    <button onClick={() => handleDeleteUser(u.id, u.fullName)} className="btn btn-danger" style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}>
-                                                        Eliminar
-                                                    </button>
-                                                )}
-                                            </td>
+                                            <td> {u.role !== 'admin' && ( <button onClick={() => handleDeleteUser(u.id, u.fullName)} className="btn btn-danger" style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}> Eliminar </button> )} </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -529,7 +460,6 @@ function AdminDashboard({ user }) {
                 </div>
             )}
 
-            {/* ══════════════ TAB: COMPRAS ══════════════ */}
             {activeTab === 'Compras' && (
                 <div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -564,17 +494,9 @@ function AdminDashboard({ user }) {
                                         <tr key={o.id}>
                                             <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>#{o.id}</td>
                                             <td style={{ fontWeight: '500' }}>{o.username || o.userId}</td>
-                                            <td style={{ fontSize: '0.85rem' }}>
-                                                {o.items?.map((item, i) => (
-                                                    <span key={i}>{item.name} x{item.qty}{i < o.items.length - 1 ? ', ' : ''}</span>
-                                                ))}
-                                            </td>
-                                            <td style={{ color: 'var(--primary)', fontWeight: '600' }}>
-                                                ₡{Number(o.total).toLocaleString('es-CR')}
-                                            </td>
-                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                                {o.date ? new Date(o.date).toLocaleDateString('es-CR') : '-'}
-                                            </td>
+                                            <td style={{ fontSize: '0.85rem' }}> {o.items?.map((item, i) => ( <span key={i}>{item.name} x{item.qty}{i < o.items.length - 1 ? ', ' : ''}</span> ))} </td>
+                                            <td style={{ color: 'var(--primary)', fontWeight: '600' }}> ₡{Number(o.total).toLocaleString('es-CR')} </td>
+                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}> {o.date ? new Date(o.date).toLocaleDateString('es-CR') : '-'} </td>
                                         </tr>
                                     ))}
                                 </tbody>

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { userService } from '../services/userService';
+import { User } from '../types';
 
 function RegisterPage() {
     const [formData, setFormData] = useState({
@@ -7,19 +9,19 @@ function RegisterPage() {
         email: '',
         password: '',
         fullName: '',
-        role: 'cliente'
+        role: 'cliente' as const
     });
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
         setError(null);
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.username || !formData.password || !formData.email || !formData.fullName) {
             setError('Por favor complete todos los campos');
@@ -29,23 +31,19 @@ function RegisterPage() {
         setLoading(true);
         try {
             // Check if username already exists
-            const checkRes = await fetch(`http://localhost:3000/users?username=${formData.username}`);
-            const existingUser = await checkRes.json();
+            const allUsers = await userService.getAll();
+            const existingUser = allUsers.find(u => u.username === formData.username);
 
-            if (existingUser.length > 0) {
+            if (existingUser) {
                 setError('El nombre de usuario ya está en uso');
                 setLoading(false);
                 return;
             }
 
             // Create user
-            const response = await fetch('http://localhost:3000/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...formData, id: Date.now().toString() })
-            });
+            const response = await userService.register({ ...formData, id: Date.now().toString() });
 
-            if (response.ok) {
+            if (response) {
                 setSuccess(true);
                 setTimeout(() => {
                     navigate('/login');

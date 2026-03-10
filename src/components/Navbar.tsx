@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CartModal from './CartModal';
+import { User, CartItem } from '../types';
 
-function Navbar({ user, logout, cartCount, cart, setCart }) {
+interface NavbarProps {
+    user: User | null;
+    logout: () => void;
+    cartCount: number;
+    cart: CartItem[];
+    setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
+}
+
+function Navbar({ user, logout, cartCount, cart, setCart }: NavbarProps) {
     const navigate = useNavigate();
     const [showCart, setShowCart] = useState(false);
 

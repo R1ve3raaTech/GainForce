@@ -211,6 +211,5 @@
       "total": 32500,
       "date": "2026-03-05T19:45:25.782Z"
     }
-  ],
-  "$schema": "./node_modules/json-server/schema.json"
+  ]
 }

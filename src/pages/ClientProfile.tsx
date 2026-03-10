@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
+import { orderService } from '../services/orderService';
+import { User, Order } from '../types';
 
-function ClientProfile({ user }) {
-    const [orders, setOrders] = useState([]);
+interface ClientProfileProps {
+    user: User;
+}
+
+function ClientProfile({ user }: ClientProfileProps) {
+    const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const res = await fetch(`http://localhost:3000/orders?userId=${user.id}`);
-                const data = await res.json();
+                const data = await orderService.getByUserId(user.id);
                 setOrders(data);
             } catch (err) {
                 console.error('Error fetching user orders:', err);

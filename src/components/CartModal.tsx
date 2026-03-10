@@ -1,4 +1,6 @@
 import Swal from 'sweetalert2';
+import { orderService } from '../services/orderService';
+import { User, CartItem } from '../types';
 
 const SwalGF = Swal.mixin({
     background: '#27272a',
@@ -8,11 +10,18 @@ const SwalGF = Swal.mixin({
     iconColor: '#dc2626',
 });
 
-function CartModal({ cart, onClose, setCart, user }) {
+interface CartModalProps {
+    cart: CartItem[];
+    onClose: () => void;
+    setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
+    user: User | null;
+}
+
+function CartModal({ cart, onClose, setCart, user }: CartModalProps) {
     const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
     const handleCheckout = async () => {
-        if (cart.length === 0) return;
+        if (!user || cart.length === 0) return;
 
         try {
             const order = {
@@ -24,13 +33,9 @@ function CartModal({ cart, onClose, setCart, user }) {
                 date: new Date().toISOString()
             };
 
-            const res = await fetch('http://localhost:3000/orders', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(order)
-            });
+            const data = await orderService.create(order);
 
-            if (res.ok) {
+            if (data) {
                 setCart([]);
                 onClose();
                 SwalGF.fire({
@@ -40,15 +45,13 @@ function CartModal({ cart, onClose, setCart, user }) {
                     timer: 3000,
                     showConfirmButton: false
                 });
-            } else {
-                SwalGF.fire({ icon: 'error', title: 'Error', text: 'No se pudo procesar la compra.' });
             }
         } catch (error) {
             SwalGF.fire({ icon: 'error', title: 'Error de conexión', text: 'Asegúrate de que el servidor esté encendido.' });
         }
     };
 
-    const removeFromCart = (id) => {
+    const removeFromCart = (id: string) => {
         setCart(prev => prev.filter(item => item.id !== id));
     };
 

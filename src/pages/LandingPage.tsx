@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
+import { productService } from '../services/productService';
+import { User, Product } from '../types';
 
 const SwalGF = Swal.mixin({
     background: '#27272a',
@@ -16,14 +18,19 @@ const SwalGF = Swal.mixin({
 
 const CATEGORIES = ['Todos', 'Suplementos', 'Pastillas', 'Accesorios', 'Ropa'];
 
-function LandingPage({ addToCart, user }) {
-    const [products, setProducts] = useState([]);
+interface LandingPageProps {
+    addToCart: (product: Product) => void;
+    user: User | null;
+}
+
+function LandingPage({ addToCart, user }: LandingPageProps) {
+    const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedProduct, setSelectedProduct] = useState(null);
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [activeCategory, setActiveCategory] = useState('Todos');
     const [loginWarning, setLoginWarning] = useState(false);
 
-    const handleAddToCart = (product) => {
+    const handleAddToCart = (product: Product) => {
         if (!user) {
             setLoginWarning(true);
             setTimeout(() => setLoginWarning(false), 3000);
@@ -40,8 +47,7 @@ function LandingPage({ addToCart, user }) {
     useEffect(() => {
         const fetchProducts = async () => {
             try {
-                const res = await fetch('http://localhost:3000/products');
-                const data = await res.json();
+                const data = await productService.getAll();
                 setProducts(data);
             } catch (err) {
                 console.error('Error fetching products:', err);
